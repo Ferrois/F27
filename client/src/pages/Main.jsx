@@ -33,7 +33,7 @@ import ActionGuideDrawer from "../components/app/ActionGuideDrawer";
 import "./main-map.css";
 import useLocalStorage from "../hooks/useLocalStorage";
 import useAccelerometerFallDetection from "../hooks/useAccelerometer";
-import { mergeImages } from "merge-base64";
+import mergeImages from "merge-base64";
 
 function Main() {
   const { auth, authRequest, setSession } = useApi();
@@ -250,10 +250,13 @@ function Main() {
     refreshLocation();
   };
 
-  const capturePhoto = useCallback(async (type) => {
+  const capturePhoto = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: type }, // Use back camera on mobile
+        video: { facingMode: "environment" }, // Use back camera on mobile
+      });
+      const streamFront = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }, // Use back camera on mobile
       });
       const video = document.createElement("video");
       video.srcObject = stream;
@@ -267,15 +270,28 @@ function Main() {
         };
       });
 
+      const videoFront = document.createElement("video");
+      videoFront.srcObject = streamFront;
+      videoFront.play();
+
+      await new Promise((resolve) => {
+        videoFront.onloadedmetadata = () => {
+          videoFront.width = videoFront.videoWidth;
+          videoFront.height = videoFront.videoHeight;
+          resolve();
+        };
+      });
+
       const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth + videoFront.videoWidth;
+      canvas.height = Math.max(video.videoHeight, videoFront.videoHeight);
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0);
+      ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+      ctx.drawImage(videoFront, video.videoWidth, 0, videoFront.videoWidth, videoFront.videoHeight);
 
       // Stop the video stream
       stream.getTracks().forEach((track) => track.stop());
-
+      streamFront.getTracks().forEach((track) => track.stop());
       // Convert to base64
       const base64Image = canvas.toDataURL("image/jpeg", 0.8);
       return base64Image;
@@ -338,25 +354,36 @@ function Main() {
       typeof window !== "undefined"
         ? JSON.parse(window.localStorage.getItem("allowEmergencyPhoto") ?? "true")
         : allowEmergencyPhoto;
-    let finalBase64 = null;
-    const imageBase64Back = photoAllowed ? await capturePhoto("environment") : null;
-    const imageBase64Front = photoAllowed ? await capturePhoto("user") : null;
-    if (!imageBase64Front && !imageBase64Back) {
+    let finalBase64 = photoAllowed ? await capturePhoto() : null;
+    if (!finalBase64) {
       toaster.warning({
         status: "warning",
-        title: "Camera unavailable",
-        description: "Could not capture photo. Emergency will be sent without image.",
         closable: true,
+        title: "Camera unavailable",
+        description: "Could not capture photo. Emergency will be sent without image."
       });
-      finalBase64 = null;
     }
-    if (imageBase64Front && imageBase64Back) {
-      finalBase64 = mergeImages([imageBase64Front, imageBase64Back]);
-    } else if (imageBase64Front) {
-      finalBase64 = imageBase64Front;
-    } else if (imageBase64Back) {
-      finalBase64 = imageBase64Back;
-    }
+    // const imageBase64Back = photoAllowed ? await capturePhoto("environment") : null;
+    // const imageBase64Front = photoAllowed ? await capturePhoto("user") : null;
+    // if (!imageBase64Front && !imageBase64Back) {
+    //   toaster.warning({
+    //     status: "warning",
+    //     title: "Camera unavailable",
+    //     description: "Could not capture photo. Emergency will be sent without image.",
+    //     closable: true,
+    //   });
+    //   finalBase64 = null;
+    // }
+    // console.log(imageBase64Front, "IMAGES");
+    // console.log(imageBase64Back, "IMAGES BACK");
+    // if (imageBase64Front && imageBase64Back) {
+    //   finalBase64 = await mergeImages([imageBase64Front, imageBase64Back]);
+    //   console.log(finalBase64, "FINAL BASE64");
+    // } else if (imageBase64Front) {
+    //   finalBase64 = imageBase64Front;
+    // } else if (imageBase64Back) {
+    //   finalBase64 = imageBase64Back;
+    // }
 
     socket.emit(
       "emergency:raise",
