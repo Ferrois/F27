@@ -57,6 +57,7 @@ function Main() {
   const mapRef = useRef(null);
   const fallCountdownIntervalRef = useRef(null);
   const fallAutoSosTimeoutRef = useRef(null);
+  const audioCtxRef = useRef(null);
   const displayName = auth?.user?.name || auth?.user?.fullName || auth?.user?.username || "Not Logged In";
   const mapCenter = location ? [location.lat, location.lng] : [51.505, -0.09];
   const [isFallPromptOpen, setIsFallPromptOpen] = useState(false);
@@ -164,6 +165,67 @@ function Main() {
     []
   );
 
+  const ensureAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    if (!audioCtxRef.current) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      audioCtxRef.current = new AudioCtx();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const playPattern = useCallback(
+    async (steps) => {
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+      try {
+        await ctx.resume();
+      } catch (err) {
+        console.warn("Audio context resume failed", err);
+      }
+
+      let start = ctx.currentTime;
+      steps.forEach(({ freq, duration, gain = 0.15, gap = 80 }) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, start);
+        gainNode.gain.setValueAtTime(0, start);
+        gainNode.gain.linearRampToValueAtTime(gain, start + 0.01);
+        gainNode.gain.setValueAtTime(gain, start + duration / 1000 - 0.05);
+        gainNode.gain.linearRampToValueAtTime(0, start + duration / 1000);
+        osc.connect(gainNode).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration / 1000 + 0.05);
+        start += (duration + gap) / 1000;
+      });
+    },
+    [ensureAudioContext]
+  );
+
+  const playModerateWarning = useCallback(() => {
+    playPattern([
+      { freq: 650, duration: 220 },
+      { freq: 650, duration: 220 },
+    ]);
+  }, [playPattern]);
+
+  const playHighWarning = useCallback(() => {
+    playPattern([
+      { freq: 800, duration: 200 },
+      { freq: 800, duration: 200 },
+      { freq: 880, duration: 240 },
+    ]);
+  }, [playPattern]);
+
+  const playSevereWarning = useCallback(() => {
+    playPattern([
+      { freq: 950, duration: 320, gain: 0.18 },
+      { freq: 1150, duration: 420, gain: 0.18 },
+    ]);
+  }, [playPattern]);
+
   useEffect(() => {
     if (location && mapRef.current) {
       // if location is about the same location as the map, dont set
@@ -232,6 +294,9 @@ function Main() {
       toaster.error({ status: "error", title: "Not connected", description: "Socket connection not ready yet." });
       return;
     }
+
+    // Provide immediate audible feedback when SOS is pressed
+    playModerateWarning();
 
     if (!location?.lat || !location?.lng) {
       toaster.error({
@@ -306,7 +371,7 @@ function Main() {
         }
       }
     );
-  }, [socket, location, activeEmergencyId, refreshLocation, allowEmergencyPhoto, capturePhoto]);
+  }, [socket, location, activeEmergencyId, refreshLocation, allowEmergencyPhoto, capturePhoto, playModerateWarning]);
 
   const clearFallTimers = useCallback(() => {
     if (fallCountdownIntervalRef.current) {
@@ -338,6 +403,7 @@ function Main() {
     clearFallTimers();
     setFallCountdown(10);
     setIsFallPromptOpen(true);
+    playSevereWarning();
 
     fallCountdownIntervalRef.current = setInterval(() => {
       setFallCountdown((prev) => Math.max(prev - 1, 0));
@@ -346,7 +412,7 @@ function Main() {
     fallAutoSosTimeoutRef.current = setTimeout(() => {
       triggerAutoSOS();
     }, 10000);
-  }, [clearFallTimers, triggerAutoSOS]);
+  }, [clearFallTimers, playSevereWarning, triggerAutoSOS]);
 
   useEffect(() => {
     return () => {
@@ -381,6 +447,7 @@ function Main() {
         const filtered = prev.filter((em) => em.emergencyId !== payload.emergencyId);
         return [...filtered, { ...payload, receivedAt: Date.now() }];
       });
+      playHighWarning();
       // If this responder is viewing an emergency, also show AEDs for that emergency
       // (AEDs are included in the payload for responders)
       toaster.warning({
@@ -400,7 +467,7 @@ function Main() {
       socket.off("emergency:nearby", handler);
       socket.off("emergency:cancelled", cancelHandler);
     };
-  }, [socket]);
+  }, [playHighWarning, socket]);
 
   const handleAddMedical = () => {
     setMedicalData((prev) => ({
@@ -694,7 +761,7 @@ function Main() {
                         borderWidth="1px"
                         borderColor="gray.200"
                         objectFit="cover"
-                        maxH="240px"
+                        maxH="320px"
                       />
                     </Box>
                   )}
