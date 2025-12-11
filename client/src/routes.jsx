@@ -5,11 +5,13 @@ import Register from "./pages/Register";
 import Login from "./pages/Login";
 import Main from "./pages/Main";
 import Settings from "./pages/Settings";
+import Testing from "./pages/Testing";
 
 function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/testing" element={<Testing />} />
         <Route path="/" element={<Home />} />
         <Route path="/main" element={<Main />} />
         <Route path="/settings" element={<Settings />} />
