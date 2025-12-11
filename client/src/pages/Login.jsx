@@ -17,10 +17,12 @@ import {
 } from "@chakra-ui/react";
 import { useApi } from "../Context/ApiContext";
 import { toaster } from "../components/ui/toaster";
+import { usePushNotifications } from "../hooks/usePushNotifications";
 
 function Login() {
   const navigate = useNavigate();
   const { login, auth, isLoadingSession } = useApi();
+  const { subscribe, isSupported } = usePushNotifications();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -95,6 +97,15 @@ function Login() {
     if (response.success) {
       // Request permissions after successful login
       await requestPermissions();
+      
+      // Subscribe to push notifications automatically
+      if (isSupported) {
+        subscribe().catch((err) => {
+          console.error("Failed to subscribe to push notifications:", err);
+          // Don't block login if push subscription fails
+        });
+      }
+      
       navigate("/main");
     } else {
       setError(response.error?.message || "Unable to login");

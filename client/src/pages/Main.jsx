@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Flex, Heading, IconButton, Text, Button, Stack, Dialog, Portal, Field, Input, Textarea, NativeSelect, CloseButton } from "@chakra-ui/react";
-import { FiSettings, FiBell, FiNavigation, FiHeart } from "react-icons/fi";
+import { Box, Flex, Heading, IconButton, Text, Button, Stack, Dialog, Portal, Field, Input, Textarea, NativeSelect, CloseButton, Card, Badge, Separator, HStack } from "@chakra-ui/react";
+import { FiSettings, FiBell, FiNavigation, FiHeart, FiPhone, FiMapPin, FiInfo } from "react-icons/fi";
 import { toaster } from "../components/ui/toaster";
 import { MapContainer, TileLayer, CircleMarker, Popup, Marker } from "react-leaflet";
 import L from "leaflet";
@@ -9,15 +9,18 @@ import { Link as RouterLink } from "react-router-dom";
 import { useApi } from "../Context/ApiContext";
 import { useLocationContext } from "../Context/LocationContext";
 import { useSocket } from "../Context/SocketContext";
+import { usePushNotifications } from "../hooks/usePushNotifications";
 import "./main-map.css";
 
 function Main() {
   const { auth, authRequest, setSession } = useApi();
   const { location, locationError, refreshLocation, heading } = useLocationContext();
   const { socket } = useSocket();
+  const { subscribe, isSupported } = usePushNotifications();
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   const [activeEmergencyId, setActiveEmergencyId] = useState(null);
   const [nearbyEmergencies, setNearbyEmergencies] = useState([]);
+  const [nearestAEDs, setNearestAEDs] = useState([]);
   const [isMedicalDialogOpen, setIsMedicalDialogOpen] = useState(false);
   const [isSavingMedical, setIsSavingMedical] = useState(false);
   const [medicalData, setMedicalData] = useState({
@@ -25,7 +28,7 @@ function Main() {
     skills: []
   });
   const mapRef = useRef(null);
-  const displayName = auth?.user?.name || auth?.user?.fullName || auth?.user?.username || "User";
+  const displayName = auth?.user?.name || auth?.user?.fullName || auth?.user?.username || "Not Logged In";
   const mapCenter = location ? [location.lat, location.lng] : [51.505, -0.09];
 
   // Initialize medical data from auth
@@ -37,6 +40,16 @@ function Main() {
       });
     }
   }, [auth?.user]);
+
+  // Auto-subscribe to push notifications on mount if logged in
+  useEffect(() => {
+    if (auth?.accessToken && isSupported) {
+      subscribe().catch((err) => {
+        console.error("Failed to subscribe to push notifications:", err);
+        // Don't show error to user, just log it
+      });
+    }
+  }, [auth?.accessToken, isSupported, subscribe]);
 
   // Create user icon with directional cone
   const userIcon = useMemo(() => {
@@ -88,6 +101,32 @@ function Main() {
         html: '<div class="pulse-ring--danger"></div>',
         iconSize: [40, 40],
         iconAnchor: [20, 20],
+      }),
+    []
+  );
+
+  const aedIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: "aed-icon",
+        html: `
+          <div style="
+            width: 30px;
+            height: 30px;
+            background-color: #e53e3e;
+            border: 3px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            font-weight: bold;
+            color: white;
+            font-size: 16px;
+          ">AED</div>
+        `,
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
       }),
     []
   );
@@ -165,6 +204,7 @@ function Main() {
         setIsSendingSOS(false);
         if (res?.status === "ok") {
           setActiveEmergencyId(null);
+          setNearestAEDs([]); // Clear AEDs when emergency is cancelled
           toaster.create({
             status: "info",
             title: "Emergency cancelled",
@@ -198,6 +238,10 @@ function Main() {
         setIsSendingSOS(false);
         if (res?.status === "ok" && res?.emergencyId) {
           setActiveEmergencyId(res.emergencyId);
+          // Store nearest AEDs if provided
+          if (res?.nearestAEDs && Array.isArray(res.nearestAEDs)) {
+            setNearestAEDs(res.nearestAEDs);
+          }
           toaster.success({
             status: "success",
             title: "Emergency sent",
@@ -222,6 +266,8 @@ function Main() {
         const filtered = prev.filter((em) => em.emergencyId !== payload.emergencyId);
         return [...filtered, { ...payload, receivedAt: Date.now() }];
       });
+      // If this responder is viewing an emergency, also show AEDs for that emergency
+      // (AEDs are included in the payload for responders)
       toaster.warning({
         status: "warning",
         title: "Emergency nearby",
@@ -231,6 +277,7 @@ function Main() {
     const cancelHandler = (payload) => {
       if (!payload?.emergencyId) return;
       setNearbyEmergencies((prev) => prev.filter((em) => em.emergencyId !== payload.emergencyId));
+      // Note: We don't clear nearestAEDs here because they're tied to activeEmergencyId, not nearbyEmergencies
     };
     socket.on("emergency:nearby", handler);
     socket.on("emergency:cancelled", cancelHandler);
@@ -432,63 +479,292 @@ function Main() {
           )}
           {nearbyEmergencies.map((em) => (
             <Marker key={em.emergencyId} position={[em.latitude, em.longitude]} icon={dangerPulseIcon}>
-              <Popup>
-                <Stack spacing={2} maxW="300px">
-                  <Heading size="sm">{em.requester?.name || em.requester?.username || "Emergency"}</Heading>
-                  <Text fontSize="sm" color="gray.700">
-                    Distance: {em.distance ? `${Math.round(em.distance)}m` : "nearby"}
-                  </Text>
-                  {em.image && (
+              <Popup maxWidth="400px">
+                <Card.Root variant="outline" size="sm" maxW="380px">
+                  <Card.Header>
+                    <Heading size="md" color="red.600">
+                      {em.requester?.name || em.requester?.username || "Emergency Alert"}
+                    </Heading>
+                    <HStack mt="2" gap="2">
+                      <Badge colorPalette="red" variant="solid">
+                        {em.distance ? `${Math.round(em.distance)}m away` : "Nearby"}
+                      </Badge>
+                    </HStack>
+                  </Card.Header>
+                  <Card.Body gap="4">
+                    {em.image && (
+                      <Box>
+                        <Text fontWeight="semibold" mb="2" fontSize="sm" color="gray.600">
+                          Emergency Image
+                        </Text>
+                        <Box
+                          as="img"
+                          src={em.image}
+                          alt="Emergency situation"
+                          w="100%"
+                          borderRadius="md"
+                          borderWidth="1px"
+                          borderColor="gray.200"
+                          objectFit="cover"
+                          maxH="200px"
+                        />
+                      </Box>
+                    )}
+                    
                     <Box>
-                      <Text fontWeight="semibold" mb={2}>Emergency Image</Text>
-                      <Box
-                        as="img"
-                        src={em.image}
-                        alt="Emergency situation"
-                        maxW="100%"
-                        borderRadius="md"
-                        borderWidth="1px"
-                        borderColor="gray.200"
-                      />
+                      <HStack mb="2" gap="2">
+                        <FiPhone size="16" />
+                        <Text fontWeight="semibold" fontSize="sm">Contact</Text>
+                      </HStack>
+                      <Text fontSize="sm" color="gray.700" pl="6">
+                        {em.requester?.phoneNumber || "N/A"}
+                      </Text>
                     </Box>
-                  )}
-                  <Box>
-                    <Text fontWeight="semibold">Phone</Text>
-                    <Text fontSize="sm">{em.requester?.phoneNumber || "N/A"}</Text>
-                  </Box>
-                  <Box>
-                    <Text fontWeight="semibold">Medical</Text>
-                    {em.requester?.medical?.length ? (
-                      em.requester.medical.map((item, idx) => (
-                        <Text key={idx} fontSize="sm">
-                          {item.condition}
-                          {item.treatment ? ` - ${item.treatment}` : ""}
-                        </Text>
-                      ))
-                    ) : (
-                      <Text fontSize="sm" color="gray.600">
-                        No medical info
-                      </Text>
+
+                    <Separator />
+
+                    {em.requester?.medical?.length > 0 && (
+                      <Box>
+                        <HStack mb="3" gap="2">
+                          <FiHeart size="16" />
+                          <Text fontWeight="semibold" fontSize="sm">Medical History</Text>
+                        </HStack>
+                        <Stack gap="2">
+                          {em.requester.medical.map((item, idx) => (
+                            <Card.Root key={idx} variant="subtle" size="sm">
+                              <Card.Body gap="2" py="2">
+                                <HStack justify="space-between" align="start">
+                                  <Box flex="1">
+                                    <Text fontWeight="medium" fontSize="sm">
+                                      {item.condition}
+                                    </Text>
+                                    {item.treatment && (
+                                      <Text fontSize="xs" color="gray.600" mt="1">
+                                        Treatment: {item.treatment}
+                                      </Text>
+                                    )}
+                                    {item.remarks && (
+                                      <Text fontSize="xs" color="gray.500" mt="1" fontStyle="italic">
+                                        {item.remarks}
+                                      </Text>
+                                    )}
+                                  </Box>
+                                </HStack>
+                              </Card.Body>
+                            </Card.Root>
+                          ))}
+                        </Stack>
+                      </Box>
                     )}
-                  </Box>
-                  <Box>
-                    <Text fontWeight="semibold">Skills</Text>
-                    {em.requester?.skills?.length ? (
-                      em.requester.skills.map((skill, idx) => (
-                        <Text key={idx} fontSize="sm">
-                          {skill.name} ({skill.level})
-                        </Text>
-                      ))
-                    ) : (
-                      <Text fontSize="sm" color="gray.600">
-                        No skills listed
-                      </Text>
+
+                    {em.requester?.skills?.length > 0 && (
+                      <Box>
+                        <HStack mb="3" gap="2">
+                          <FiInfo size="16" />
+                          <Text fontWeight="semibold" fontSize="sm">Skills</Text>
+                        </HStack>
+                        <Flex wrap="wrap" gap="2">
+                          {em.requester.skills.map((skill, idx) => (
+                            <Badge
+                              key={idx}
+                              colorPalette={
+                                skill.level === "professional"
+                                  ? "green"
+                                  : skill.level === "proficient"
+                                  ? "blue"
+                                  : "gray"
+                              }
+                              variant="subtle"
+                            >
+                              {skill.name} ({skill.level})
+                            </Badge>
+                          ))}
+                        </Flex>
+                      </Box>
                     )}
-                  </Box>
-                </Stack>
+                  </Card.Body>
+                </Card.Root>
               </Popup>
             </Marker>
           ))}
+          {/* Display AEDs for active emergency (user's own emergency) */}
+          {activeEmergencyId && nearestAEDs.map((aed, idx) => (
+            <Marker key={`aed-${idx}`} position={[aed.latitude, aed.longitude]} icon={aedIcon}>
+              <Popup maxWidth="350px">
+                <Card.Root variant="outline" size="sm" maxW="330px">
+                  <Card.Header>
+                    <HStack gap="2" align="center">
+                      <Box
+                        w="8"
+                        h="8"
+                        borderRadius="full"
+                        bg="red.500"
+                        color="white"
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="center"
+                        fontWeight="bold"
+                        fontSize="xs"
+                      >
+                        AED
+                      </Box>
+                      <Heading size="sm">AED Location</Heading>
+                    </HStack>
+                    <Badge colorPalette="red" variant="solid" mt="2">
+                      {Math.round(aed.distance)}m away
+                    </Badge>
+                  </Card.Header>
+                  <Card.Body gap="3">
+                    <Box>
+                      <HStack mb="2" gap="2">
+                        <FiMapPin size="16" />
+                        <Text fontWeight="semibold" fontSize="sm">Location Details</Text>
+                      </HStack>
+                      <Card.Root variant="subtle" size="sm">
+                        <Card.Body gap="2" py="2">
+                          <Box>
+                            <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                              Description
+                            </Text>
+                            <Text fontSize="sm" mt="1">
+                              {aed.description}
+                            </Text>
+                          </Box>
+                          <Separator />
+                          <HStack justify="space-between">
+                            <Box>
+                              <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                Floor Level
+                              </Text>
+                              <Badge colorPalette="blue" variant="subtle" mt="1">
+                                {aed.floorLevel}
+                              </Badge>
+                            </Box>
+                          </HStack>
+                          {aed.buildingName && (
+                            <>
+                              <Separator />
+                              <Box>
+                                <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                  Building
+                                </Text>
+                                <Text fontSize="sm" mt="1">
+                                  {aed.buildingName}
+                                </Text>
+                              </Box>
+                            </>
+                          )}
+                          {aed.roadName && (
+                            <>
+                              <Separator />
+                              <Box>
+                                <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                  Address
+                                </Text>
+                                <Text fontSize="sm" mt="1">
+                                  {aed.houseNumber ? `${aed.houseNumber} ` : ""}{aed.roadName}
+                                </Text>
+                              </Box>
+                            </>
+                          )}
+                        </Card.Body>
+                      </Card.Root>
+                    </Box>
+                  </Card.Body>
+                </Card.Root>
+              </Popup>
+            </Marker>
+          ))}
+          {/* Display AEDs for nearby emergencies (for responders) */}
+          {nearbyEmergencies.map((em) => 
+            em.nearestAEDs && Array.isArray(em.nearestAEDs) && em.nearestAEDs.map((aed, idx) => (
+              <Marker key={`aed-${em.emergencyId}-${idx}`} position={[aed.latitude, aed.longitude]} icon={aedIcon}>
+                <Popup maxWidth="350px">
+                  <Card.Root variant="outline" size="sm" maxW="330px">
+                    <Card.Header>
+                      <HStack gap="2" align="center">
+                        <Box
+                          w="8"
+                          h="8"
+                          borderRadius="full"
+                          bg="red.500"
+                          color="white"
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="center"
+                          fontWeight="bold"
+                          fontSize="xs"
+                        >
+                          AED
+                        </Box>
+                        <Heading size="sm">AED Location</Heading>
+                      </HStack>
+                      <Badge colorPalette="red" variant="solid" mt="2">
+                        {Math.round(aed.distance)}m away
+                      </Badge>
+                    </Card.Header>
+                    <Card.Body gap="3">
+                      <Box>
+                        <HStack mb="2" gap="2">
+                          <FiMapPin size="16" />
+                          <Text fontWeight="semibold" fontSize="sm">Location Details</Text>
+                        </HStack>
+                        <Card.Root variant="subtle" size="sm">
+                          <Card.Body gap="2" py="2">
+                            <Box>
+                              <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                Description
+                              </Text>
+                              <Text fontSize="sm" mt="1">
+                                {aed.description}
+                              </Text>
+                            </Box>
+                            <Separator />
+                            <HStack justify="space-between">
+                              <Box>
+                                <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                  Floor Level
+                                </Text>
+                                <Badge colorPalette="blue" variant="subtle" mt="1">
+                                  {aed.floorLevel}
+                                </Badge>
+                              </Box>
+                            </HStack>
+                            {aed.buildingName && (
+                              <>
+                                <Separator />
+                                <Box>
+                                  <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                    Building
+                                  </Text>
+                                  <Text fontSize="sm" mt="1">
+                                    {aed.buildingName}
+                                  </Text>
+                                </Box>
+                              </>
+                            )}
+                            {aed.roadName && (
+                              <>
+                                <Separator />
+                                <Box>
+                                  <Text fontSize="xs" color="gray.600" fontWeight="medium">
+                                    Address
+                                  </Text>
+                                  <Text fontSize="sm" mt="1">
+                                    {aed.houseNumber ? `${aed.houseNumber} ` : ""}{aed.roadName}
+                                  </Text>
+                                </Box>
+                              </>
+                            )}
+                          </Card.Body>
+                        </Card.Root>
+                      </Box>
+                    </Card.Body>
+                  </Card.Root>
+                </Popup>
+              </Marker>
+            ))
+          )}
         </MapContainer>
       </Box>
 
@@ -551,6 +827,28 @@ function Main() {
           {activeEmergencyId ? "PRESS TO CANCEL" : "EMERGENCY PRESS HERE"}
         </Button>
       </Box>
+
+      {/* AED Information Message */}
+      {(activeEmergencyId && nearestAEDs.length > 0) || nearbyEmergencies.some(em => em.nearestAEDs && em.nearestAEDs.length > 0) ? (
+        <Box
+          position="fixed"
+          top="80px"
+          left="50%"
+          transform="translateX(-50%)"
+          zIndex="2"
+          bg="blue.500"
+          color="white"
+          px="4"
+          py="2"
+          borderRadius="md"
+          shadow="lg"
+          maxW="90%"
+        >
+          <Text fontSize="sm" fontWeight="medium" textAlign="center">
+            Nearest AED locations are marked on the map
+          </Text>
+        </Box>
+      ) : null}
 
       <Dialog.Root open={isMedicalDialogOpen} onOpenChange={(e) => setIsMedicalDialogOpen(e.open)}>
         <Portal>
