@@ -10,6 +10,7 @@ import { useApi } from "../Context/ApiContext";
 import { useLocationContext } from "../Context/LocationContext";
 import { useSocket } from "../Context/SocketContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
+import ActionGuideDrawer from "../components/app/ActionGuideDrawer";
 import "./main-map.css";
 
 function Main() {
@@ -59,29 +60,29 @@ function Main() {
       // No heading available, use regular circle marker
       return null;
     }
-    
+
     // Create a cone/arrow pointing in the direction of heading
     const angle = heading || 0;
     const size = 40;
     const coneLength = 20;
-    
+
     const svg = `
       <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="${size/2}" cy="${size/2}" r="8" fill="#3182ce" stroke="#fff" stroke-width="2"/>
+        <circle cx="${size / 2}" cy="${size / 2}" r="8" fill="#3182ce" stroke="#fff" stroke-width="2"/>
         <polygon 
-          points="${size/2},${size/2} ${size/2 + coneLength * Math.sin((angle - 90) * Math.PI / 180)},${size/2 - coneLength * Math.cos((angle - 90) * Math.PI / 180)} ${size/2 + 8 * Math.sin((angle - 90) * Math.PI / 180)},${size/2 - 8 * Math.cos((angle - 90) * Math.PI / 180)}" 
+          points="${size / 2},${size / 2} ${size / 2 + coneLength * Math.sin((angle - 90) * Math.PI / 180)},${size / 2 - coneLength * Math.cos((angle - 90) * Math.PI / 180)} ${size / 2 + 8 * Math.sin((angle - 90) * Math.PI / 180)},${size / 2 - 8 * Math.cos((angle - 90) * Math.PI / 180)}" 
           fill="#3182ce" 
           stroke="#fff" 
           stroke-width="1"
         />
       </svg>
     `;
-    
+
     return L.divIcon({
       className: "user-direction-icon",
       html: svg,
       iconSize: [size, size],
-      iconAnchor: [size/2, size/2],
+      iconAnchor: [size / 2, size / 2],
     });
   }, [heading]);
 
@@ -149,13 +150,13 @@ function Main() {
 
   const capturePhoto = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' } // Use back camera on mobile
       });
       const video = document.createElement('video');
       video.srcObject = stream;
       video.play();
-      
+
       await new Promise((resolve) => {
         video.onloadedmetadata = () => {
           video.width = video.videoWidth;
@@ -169,10 +170,10 @@ function Main() {
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0);
-      
+
       // Stop the video stream
       stream.getTracks().forEach(track => track.stop());
-      
+
       // Convert to base64
       const base64Image = canvas.toDataURL('image/jpeg', 0.8);
       return base64Image;
@@ -224,10 +225,10 @@ function Main() {
     }
 
     setIsSendingSOS(true);
-    
+
     // Capture photo before sending emergency
     const imageBase64 = await capturePhoto();
-    
+
     socket.emit(
       "emergency:raise",
       {
@@ -306,7 +307,7 @@ function Main() {
   const handleUpdateMedical = (index, field, value) => {
     setMedicalData(prev => ({
       ...prev,
-      medical: prev.medical.map((item, i) => 
+      medical: prev.medical.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
       )
     }));
@@ -329,7 +330,7 @@ function Main() {
   const handleUpdateSkill = (index, field, value) => {
     setMedicalData(prev => ({
       ...prev,
-      skills: prev.skills.map((item, i) => 
+      skills: prev.skills.map((item, i) =>
         i === index ? { ...item, [field]: value } : item
       )
     }));
@@ -342,7 +343,7 @@ function Main() {
         medical: medicalData.medical.filter(m => m.condition.trim() !== ""),
         skills: medicalData.skills.filter(s => s.name.trim() !== "")
       });
-      
+
       if (response.success) {
         setSession({ ...auth, user: response.data.user });
         setIsMedicalDialogOpen(false);
@@ -827,9 +828,9 @@ function Main() {
                       {medicalData.medical.map((item, index) => (
                         <Box key={index} p="4" borderWidth="1px" borderRadius="md">
                           <Flex justify="flex-end" mb="2">
-                            <IconButton 
-                              size="sm" 
-                              variant="ghost" 
+                            <IconButton
+                              size="sm"
+                              variant="ghost"
                               colorPalette="red"
                               onClick={() => handleRemoveMedical(index)}
                             >
@@ -879,9 +880,9 @@ function Main() {
                       {medicalData.skills.map((skill, index) => (
                         <Box key={index} p="4" borderWidth="1px" borderRadius="md">
                           <Flex justify="flex-end" mb="2">
-                            <IconButton 
-                              size="sm" 
-                              variant="ghost" 
+                            <IconButton
+                              size="sm"
+                              variant="ghost"
                               colorPalette="red"
                               onClick={() => handleRemoveSkill(index)}
                             >
@@ -925,8 +926,8 @@ function Main() {
                 <Dialog.ActionTrigger asChild>
                   <Button variant="outline">Cancel</Button>
                 </Dialog.ActionTrigger>
-                <Button 
-                  colorPalette="blue" 
+                <Button
+                  colorPalette="blue"
                   onClick={handleSaveMedical}
                   isLoading={isSavingMedical}
                 >
