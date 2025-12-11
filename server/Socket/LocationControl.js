@@ -11,7 +11,6 @@ function registerLocationHandlers(io) {
     console.log(`Location socket connected: ${socket.id} user=${socket.user?.id}`);
 
     socket.on("location:update", async (payload = {}, ack) => {
-      console.log(payload);
       if (!validateLocation(payload)) {
         ack?.({ status: "error", message: "Invalid location payload" });
         return;

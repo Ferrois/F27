@@ -260,6 +260,10 @@ function registerSOSHandlers(io) {
           }
         });
 
+        // Log event without exposing location data
+        const requesterUsername = requester?.username || requester?.name || userId;
+        console.log(`Emergency called by ${requesterUsername}`);
+
         // Send push notifications to nearby responders
         if (nearbyUserIds.length > 0) {
           const distanceText = requester?.name || requester?.username || "Someone";
@@ -303,6 +307,10 @@ function registerSOSHandlers(io) {
           ack?.({ status: "error", message: "Emergency not found" });
           return;
         }
+
+        const cancellingUser = await User.findById(userId).select("username name");
+        const cancellingUsername = cancellingUser?.username || cancellingUser?.name || userId;
+        console.log(`Emergency cancelled by ${cancellingUsername} (emergencyId=${emergencyId})`);
 
         // Notify all subscribers so they can remove the cancelled emergency
         emergencySubscribers.forEach((subscriberSockets) => {

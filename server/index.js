@@ -48,7 +48,6 @@ app.use("/user", userRoute);
 
 //Receive post request on the /api route
 app.get("/ping", function (req, res) {
-  console.log(req.body);
   res.send("pong");
 });
 
