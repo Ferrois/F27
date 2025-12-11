@@ -360,9 +360,38 @@ function registerSOSHandlers(io) {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       emergencySubscribers.get(userId)?.delete(socket.id);
       socketToUser.delete(socket.id);
+
+      try {
+        const userDoc = await User.findById(userId).select("emergencies username name");
+        const activeIds =
+          userDoc?.emergencies?.filter((em) => em.isActive)?.map((em) => em._id) || [];
+
+        if (activeIds.length > 0) {
+          await User.updateOne(
+            { _id: userId },
+            { $set: { "emergencies.$[em].isActive": false } },
+            { arrayFilters: [{ "em.isActive": true }] }
+          );
+
+          const cancellingUsername = userDoc?.username || userDoc?.name || userId;
+          console.log(
+            `Socket disconnected; cancelling active emergencies for ${cancellingUsername}: ${activeIds.join(",")}`
+          );
+
+          emergencySubscribers.forEach((subscriberSockets) => {
+            subscriberSockets?.forEach((socketId) => {
+              activeIds.forEach((cancelledId) => {
+                io.to(socketId).emit("emergency:cancelled", { emergencyId: cancelledId, userId });
+              });
+            });
+          });
+        }
+      } catch (err) {
+        console.error("Failed to cancel emergencies on disconnect", err);
+      }
     });
   });
 }

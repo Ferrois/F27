@@ -32,6 +32,7 @@ function formatUserResponse(user) {
 }
 
 router.post("/register", async (req, res) => {
+  console.log(req.body)
   const { username, name, birthday, phoneNumber, address, medical, skills, dependencies, gender, password, location } = req.body;
   
   // If user already exists, Error 1
@@ -71,7 +72,6 @@ router.post("/register", async (req, res) => {
       dependencies: dependencies || []
     });
     await user.save();
-    console.log(`User registered: ${user.username}`);
     const payload = { id: user._id, username: user.username };
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
@@ -110,7 +110,6 @@ router.post("/login", async (req, res) => {
     const accessToken = generateAccessToken(payload);
     const refreshToken = generateRefreshToken(payload);
 
-    console.log(`User login: ${user.username}`);
     res.json({
       type: "success",
       message: "Login successful",
