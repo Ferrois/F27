@@ -5,6 +5,7 @@ import { FiArrowLeft, FiSettings, FiBell } from "react-icons/fi";
 import { useApi } from "../Context/ApiContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { toaster } from "../components/ui/toaster";
+import useLocalStorage from "../hooks/useLocalStorage";
 
 function Settings() {
   const { logout } = useApi();
@@ -12,6 +13,7 @@ function Settings() {
   const { isSupported, isSubscribed, toggle, subscribe } = usePushNotifications();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [allowEmergencyPhoto, setAllowEmergencyPhoto] = useLocalStorage("allowEmergencyPhoto", true);
 
   useEffect(() => {
     setPushEnabled(isSubscribed);
@@ -115,6 +117,31 @@ function Settings() {
                   Push notifications are not supported in this browser.
                 </Text>
               )}
+            </Card.Body>
+          </Card.Root>
+
+          <Card.Root variant="outline">
+            <Card.Header>
+              <Heading size="sm">Emergency Photo Capture</Heading>
+            </Card.Header>
+            <Card.Body gap="4">
+              <Text color="gray.600" _dark={{ color: "gray.300" }} fontSize="sm">
+                Allow the app to take a photo automatically when you raise an emergency. Photos help AI and responders, but you can opt out.
+              </Text>
+              <Flex justify="space-between" align="center">
+                <Text fontWeight="medium">
+                  {allowEmergencyPhoto ? "Photo capture enabled" : "Photo capture disabled"}
+                </Text>
+                <Switch.Root
+                  checked={allowEmergencyPhoto}
+                  onCheckedChange={(e) => setAllowEmergencyPhoto(e.checked)}
+                  colorPalette="blue"
+                >
+                  <Switch.HiddenInput />
+                  <Switch.Control />
+                  <Switch.Label />
+                </Switch.Root>
+              </Flex>
             </Card.Body>
           </Card.Root>
 

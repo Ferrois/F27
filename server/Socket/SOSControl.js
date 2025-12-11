@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const User = require("../Models/user");
 const { findNearestAEDs } = require("./AEDHelper");
 const { sendNotificationToUsers } = require("../PushNotifications/pushService");
+const { assessEmergencyWithGroq } = require("../ai_assess");
 
 // Keep track of sockets that want to receive emergency alerts
 const emergencySubscribers = new Map(); // userId -> Set<socketId>
@@ -115,6 +116,29 @@ function registerSOSHandlers(io) {
           "location.longitude",
         ]);
 
+        // Run AI assessment (image + requester medical history) if configured
+        let aiSummary = null;
+        if (process.env.GROQ_API_KEY) {
+          try {
+            aiSummary = await assessEmergencyWithGroq(payload.image || "", requester?.medical || [], process.env.GROQ_API_KEY);
+          } catch (err) {
+            console.error("AI assessment failed:", err.message);
+            aiSummary = {
+              condition: "Unavailable",
+              severity: "Unknown",
+              reasoning: "AI service unavailable.",
+              action: "Proceed with standard protocol.",
+            };
+          }
+        } else {
+          aiSummary = {
+            condition: "Not configured",
+            severity: "Unknown",
+            reasoning: "GROQ_API_KEY not set on server.",
+            action: "Proceed with standard protocol.",
+          };
+        }
+
         // Collect nearby user IDs for push notifications
         const nearbyUserIds = [];
 
@@ -138,6 +162,7 @@ function registerSOSHandlers(io) {
                 distance,
                 image: emergency.Image || null,
                 nearestAEDs: nearestAEDs,
+                aiSummary,
                 requester: requester
                   ? {
                       id: requester._id,
@@ -174,7 +199,7 @@ function registerSOSHandlers(io) {
         }
 
         // Send acknowledgment to the client who raised the emergency, including nearest AEDs
-        ack?.({ status: "ok", expiresAt, emergencyId, nearestAEDs: nearestAEDs });
+        ack?.({ status: "ok", expiresAt, emergencyId, nearestAEDs: nearestAEDs, aiSummary });
       } catch (error) {
         console.error("Failed to handle emergency raise", error);
         ack?.({ status: "error", message: "Failed to save emergency" });

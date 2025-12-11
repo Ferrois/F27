@@ -1,14 +1,5 @@
-// helperfunction.js
-// ⚠️ Ensure 'dotenv' is required in your main server file (app.js/server.js)
-
-/**
- * Analyzes a medical situation using Groq's Vision API
- * @param {string} base64Image - The image encoded as a base64 string
- * @param {Array} medicalHistory - Array of strings OR objects
- * @param {string} apiKey - Your Groq API Key
- * @returns {Promise<Object>} - JSON object with the emergency assessment
- */
 async function assessEmergencyWithGroq(base64Image, medicalHistory, apiKey) {
+  console.log(apiKey)
   const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
   
   // ⬇️ PASTE THE WORKING MODEL ID YOU FOUND HERE
@@ -94,7 +85,7 @@ async function assessEmergencyWithGroq(base64Image, medicalHistory, apiKey) {
     return {
       condition: "Error",
       severity: "Unknown",
-      reasoning: "AI Service Unavailable. Please rely on manual triage.",
+      reasoning: "AI Service Unavailable.",
       action: "Call emergency services."
     };
   }

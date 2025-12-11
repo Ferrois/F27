@@ -31,6 +31,7 @@ import { useSocket } from "../Context/SocketContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import ActionGuideDrawer from "../components/app/ActionGuideDrawer";
 import "./main-map.css";
+import useLocalStorage from "../hooks/useLocalStorage";
 
 function Main() {
   const { auth, authRequest, setSession } = useApi();
@@ -50,6 +51,7 @@ function Main() {
     medical: [],
     skills: [],
   });
+  const [allowEmergencyPhoto] = useLocalStorage("allowEmergencyPhoto", true);
   const mapRef = useRef(null);
   const displayName = auth?.user?.name || auth?.user?.fullName || auth?.user?.username || "Not Logged In";
   const mapCenter = location ? [location.lat, location.lng] : [51.505, -0.09];
@@ -264,8 +266,11 @@ function Main() {
 
     setIsSendingSOS(true);
 
-    // Capture photo before sending emergency
-    const imageBase64 = await capturePhoto();
+    // Capture photo before sending emergency (respect user setting and latest storage value)
+    const photoAllowed = typeof window !== "undefined"
+      ? JSON.parse(window.localStorage.getItem("allowEmergencyPhoto") ?? "true")
+      : allowEmergencyPhoto;
+    const imageBase64 = photoAllowed ? await capturePhoto() : null;
 
     socket.emit(
       "emergency:raise",
@@ -625,10 +630,41 @@ function Main() {
                         Contact
                       </Text>
                     </HStack>
-                    <Text fontSize="sm" color="gray.700" pl="6">
+                    <Text fontSize="sm" color="gray.300" pl="6">
                       {selectedEmergency?.requester?.phoneNumber || "N/A"}
                     </Text>
                   </Box>
+
+                  {selectedEmergency?.aiSummary && (
+                    <Box>
+                      <HStack mb="3" gap="2">
+                        <FiInfo size="16" />
+                        <Text fontWeight="semibold" fontSize="sm">
+                          AI Summary
+                        </Text>
+                      </HStack>
+                      <Card.Root variant="subtle" size="sm">
+                        <Card.Body gap="2" py="2">
+                          <Text fontWeight="medium" fontSize="sm">
+                            Condition: {selectedEmergency.aiSummary.condition || "Unclear"}
+                          </Text>
+                          <Badge colorPalette="purple" variant="subtle" alignSelf="flex-start">
+                            Severity: {selectedEmergency.aiSummary.severity || "Unknown"}
+                          </Badge>
+                          <Text fontSize="sm" color="gray.300">
+                            Reasoning: {selectedEmergency.aiSummary.reasoning || "No details provided."}
+                          </Text>
+                          <Separator />
+                          <Text fontSize="sm" fontWeight="medium">
+                            Suggested Action
+                          </Text>
+                          <Text fontSize="sm" color="gray.300">
+                            {selectedEmergency.aiSummary.action || "Proceed with standard protocol."}
+                          </Text>
+                        </Card.Body>
+                      </Card.Root>
+                    </Box>
+                  )}
 
                   {selectedEmergency?.requester?.medical?.length > 0 && (
                     <Box>
