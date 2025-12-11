@@ -8,6 +8,12 @@ const {
   verifyRefreshToken,
   authenticateToken,
 } = require("../Crypt/jwtHelper");
+const {
+  subscribeUser,
+  unsubscribeUser,
+  togglePushNotifications,
+  getPublicVapidKey,
+} = require("../PushNotifications/pushService");
 
 function formatUserResponse(user) {
   return {
@@ -153,6 +159,87 @@ router.get("/me", authenticateToken, async (req, res) => {
       return res.status(404).json({ type: "error", message: "User not found" });
     }
     res.json({ type: "success", user: formatUserResponse(user) });
+  } catch (error) {
+    res.status(500).json({ type: "error", message: error.message });
+  }
+});
+
+// Update user medical info and skills
+router.put("/medical", authenticateToken, async (req, res) => {
+  try {
+    const { medical, skills } = req.body;
+    const user = await UserSchema.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ type: "error", message: "User not found" });
+    }
+
+    if (medical !== undefined) {
+      user.medical = medical;
+    }
+    if (skills !== undefined) {
+      user.skills = skills;
+    }
+
+    await user.save();
+    res.json({ type: "success", message: "Medical information updated", user: formatUserResponse(user) });
+  } catch (error) {
+    res.status(500).json({ type: "error", message: error.message });
+  }
+});
+
+// Get public VAPID key
+router.get("/push/vapid-key", (req, res) => {
+  res.json({ type: "success", publicKey: getPublicVapidKey() });
+});
+
+// Subscribe to push notifications
+router.post("/push/subscribe", authenticateToken, async (req, res) => {
+  try {
+    const subscription = req.body;
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json({ type: "error", message: "Invalid subscription data" });
+    }
+
+    const result = await subscribeUser(req.user.id, subscription);
+    if (result.success) {
+      res.json({ type: "success", message: "Subscribed to push notifications" });
+    } else {
+      res.status(500).json({ type: "error", message: result.error });
+    }
+  } catch (error) {
+    res.status(500).json({ type: "error", message: error.message });
+  }
+});
+
+// Unsubscribe from push notifications
+router.post("/push/unsubscribe", authenticateToken, async (req, res) => {
+  try {
+    const { endpoint } = req.body;
+    const result = await unsubscribeUser(req.user.id, endpoint);
+    if (result.success) {
+      res.json({ type: "success", message: "Unsubscribed from push notifications" });
+    } else {
+      res.status(500).json({ type: "error", message: result.error });
+    }
+  } catch (error) {
+    res.status(500).json({ type: "error", message: error.message });
+  }
+});
+
+// Toggle push notifications
+router.put("/push/toggle", authenticateToken, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ type: "error", message: "enabled must be a boolean" });
+    }
+
+    const result = await togglePushNotifications(req.user.id, enabled);
+    if (result.success) {
+      res.json({ type: "success", message: `Push notifications ${enabled ? "enabled" : "disabled"}` });
+    } else {
+      res.status(500).json({ type: "error", message: result.error });
+    }
   } catch (error) {
     res.status(500).json({ type: "error", message: error.message });
   }

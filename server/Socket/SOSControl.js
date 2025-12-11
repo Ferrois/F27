@@ -1,5 +1,7 @@
 const mongoose = require("mongoose");
 const User = require("../Models/user");
+const { findNearestAEDs } = require("./AEDHelper");
+const { sendNotificationToUsers } = require("../PushNotifications/pushService");
 
 // Keep track of sockets that want to receive emergency alerts
 const emergencySubscribers = new Map(); // userId -> Set<socketId>
@@ -60,6 +62,7 @@ function registerSOSHandlers(io) {
     });
 
     socket.on("emergency:raise", async (payload = {}, ack) => {
+      console.log("Raising Emergency");
       const latitude = toNumber(payload.latitude);
       const longitude = toNumber(payload.longitude);
       if (!validateCoords(latitude, longitude)) {
@@ -70,7 +73,13 @@ function registerSOSHandlers(io) {
       const now = new Date();
       const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
       const emergencyId = new mongoose.Types.ObjectId();
-      const emergency = { _id: emergencyId, isActive: true, createdAt: now, expiresAt };
+      const emergency = { 
+        _id: emergencyId, 
+        isActive: true, 
+        createdAt: now, 
+        expiresAt,
+        Image: payload.image || null
+      };
 
       try {
         await User.findByIdAndUpdate(
@@ -85,7 +94,10 @@ function registerSOSHandlers(io) {
         // Automatically expire this emergency after 10 minutes
         expireEmergency(userId, emergencyId, expiresAt.getTime() - now.getTime());
 
-        // Notify nearby subscribers (5 km radius)
+        // Find nearest 5 AEDs from emergency location
+        const nearestAEDs = findNearestAEDs(latitude, longitude, 5);
+
+        // Notify nearby subscribers (500 km radius)
         const others = await User.find({
           _id: { $ne: userId },
           "location.latitude": { $ne: null },
@@ -103,6 +115,9 @@ function registerSOSHandlers(io) {
           "location.longitude",
         ]);
 
+        // Collect nearby user IDs for push notifications
+        const nearbyUserIds = [];
+
         others.forEach((user) => {
           const loc = {
             latitude: toNumber(user.location?.latitude),
@@ -110,7 +125,8 @@ function registerSOSHandlers(io) {
           };
           if (!validateCoords(loc.latitude, loc.longitude)) return;
           const distance = distanceInMeters(origin, loc);
-          if (distance <= 5000) {
+          if (distance <= 500000) {
+            nearbyUserIds.push(user._id);
             const subscriberSockets = emergencySubscribers.get(String(user._id));
             subscriberSockets?.forEach((socketId) => {
               io.to(socketId).emit("emergency:nearby", {
@@ -120,6 +136,8 @@ function registerSOSHandlers(io) {
                 longitude,
                 expiresAt,
                 distance,
+                image: emergency.Image || null,
+                nearestAEDs: nearestAEDs,
                 requester: requester
                   ? {
                       id: requester._id,
@@ -135,7 +153,28 @@ function registerSOSHandlers(io) {
           }
         });
 
-        ack?.({ status: "ok", expiresAt, emergencyId });
+        // Send push notifications to nearby responders
+        if (nearbyUserIds.length > 0) {
+          const distanceText = requester?.name || requester?.username || "Someone";
+          sendNotificationToUsers(nearbyUserIds, {
+            title: "Emergency Alert",
+            body: `${distanceText} needs help nearby. Open the app to view details.`,
+            icon: "/vite.svg",
+            badge: "/vite.svg",
+            data: {
+              emergencyId: emergencyId.toString(),
+              userId: userId.toString(),
+              latitude,
+              longitude,
+            },
+            requireInteraction: true,
+          }).catch((err) => {
+            console.error("Failed to send push notifications:", err);
+          });
+        }
+
+        // Send acknowledgment to the client who raised the emergency, including nearest AEDs
+        ack?.({ status: "ok", expiresAt, emergencyId, nearestAEDs: nearestAEDs });
       } catch (error) {
         console.error("Failed to handle emergency raise", error);
         ack?.({ status: "error", message: "Failed to save emergency" });
