@@ -40,7 +40,7 @@ async function assessEmergencyWithGroq(base64Image, medicalHistory, apiKey) {
           You are a medical triage AI. Analyze the image and patient history.
           CRITICAL RULES:
           1. Return ONLY valid JSON.
-          2. Structure: { "condition": string, "severity": "High"|"Medium"|"Low", "reasoning": string, "action": string }
+          2. Structure: { "condition": string, "severity": "High"|"Medium"|"Low", "reasoning": string, "action": string, "location": string }
           3. If the image is unclear, set condition to "Unclear".
         `
       },
