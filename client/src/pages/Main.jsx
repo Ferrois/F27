@@ -727,11 +727,7 @@ function Main() {
           )}
           {(fallDetectionEnabled || true) && (
             <Badge mt="2" colorPalette={accelerometerSupported ? "green" : "gray"} variant="subtle" fontSize="xs">
-              {accelerometerSupported
-                ? fallDetectionActive
-                  ? "Fall detection on"
-                  : "Fall detection off"
-                : "Fall detection off"}
+              {accelerometerSupported ? (fallDetectionActive ? "Fall detection on" : "Fall detection off") : "Fall detection off"}
             </Badge>
           )}
         </Box>
@@ -740,7 +736,7 @@ function Main() {
             trigger={
               <Button aria-label="Action Guide" variant="subtle" _hover={{ bg: "whiteAlpha.200" }}>
                 <FiInfo />
-                {"Guides"}
+                <Text hideBelow={"md"}>Guides</Text>
               </Button>
             }
           />
